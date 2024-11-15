@@ -1,0 +1,657 @@
+﻿using DevExpress.XtraEditors;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using DevExpress.Spreadsheet;
+using GetTemplateandConvertPDFService.Models.Entities;
+using GetTemplateandConvertPDFService.Models;
+using System.IO;
+using DevExpress.XtraPrinting;
+using Microsoft.Office.Interop.Excel;
+using _Excel = Microsoft.Office.Interop.Excel;
+using DataTable = System.Data.DataTable;
+using Workbook = Microsoft.Office.Interop.Excel.Workbook;
+using Worksheet = Microsoft.Office.Interop.Excel.Worksheet;
+using log4net;
+using log4net.Config;
+using System.Diagnostics;
+
+namespace GetTemplateandConvertPDFService
+{
+    public partial class Form1 : Form
+    {        
+        public DB _DB = new DB();
+        public static string TemplateLink = @"\\10.118.11.28\Spec_Doc\";
+        public static string TemplateCoppy = @"D:\temp\";
+        public static string StoragePdf = @"\\10.118.11.112\process\MTRL";
+        public DBBusiness _DbBusiness = new DBBusiness();
+        public int _maxMinute = 5;
+        public int _countMinute;
+        public int _countSecond = 0;
+
+        public int _maxMinute2 = 5;
+        public int _countMinute2;
+        public int _countSecond2 = 0;
+        public Form1()
+        {
+            InitializeComponent();
+        }
+        public class MachineInformation
+        {
+            string templatePathName;
+            string machineName;
+            string machineGroup;            
+            public string MachineName { get => machineName; set => machineName = value; }
+            public string MachineGroup { get => machineGroup; set => machineGroup = value; }
+            public string TemplatePathName { get => templatePathName; set => templatePathName = value; }
+        }     
+
+        public List<string> machineGroup = new List<string>();
+        public string listMachineGroups = "";
+        public bool isRunning = false;
+        private bool IsInputInArray(string[] array, string input)
+        {
+            return array.Any(item => item == input);
+        }
+        private void Form1_Load(object sender, EventArgs e)
+        {         
+            
+
+            DataTable tbl = listMachineGroup();
+            //create List machine group
+            //string query = "select distinct machinegroup from Z_SPECMTRLREVISION where MACHINEGROUP NOT IN ('CR','KZ') order by machinegroup asc";
+            //DataTable tbl = await _DB.DB_table("GetProcessData&Template", "GetListMachineGroupInfor", "SPEC", query);
+
+            //string st = "";
+            timer2.Enabled = true;
+            timer1.Enabled = true;
+            DataTable tbl1 = HistoryRefresh();
+            gridControl1.DataSource = tbl1;
+
+            foreach (DataRow item in tbl.Rows)
+            {
+                machineGroup.Add(item["MACHINEGROUP"].ToString().Trim());
+            }
+            getDataField();                      
+        }
+                
+        private DataTable getLastestVersionInf(string machineGroup)
+        {
+            DataTable tbl = new DataTable();
+            string query = @"SELECT PARTNUMBER, REVISIONNO, APPLICATIONDATE, MACHINEGROUP
+                                FROM (
+                                    SELECT A.PARTNUMBER, B.REVISIONNO,
+                                           ROW_NUMBER() OVER (PARTITION BY A.PARTNUMBER ORDER BY B.REVISIONNO DESC) AS rn,
+                                           B.APPLICATIONDATE, A.MACHINEGROUP
+                                    FROM Z_SPECMTRLPROCESSSTATUS A
+                                    JOIN Z_SPECMTRLREVISION B ON A.REVISIONNO = B.REVISIONNO AND A.PARTNUMBER = B.PARTNUMBER
+                                    WHERE A.approvestate = '9' AND  A.MACHINEGROUP = '"+machineGroup+"' " +
+                                    " AND TO_DATE(SUBSTR(B.APPLICATIONDATE, 1, LENGTH(B.APPLICATIONDATE)-1), 'YYYYMMDD') < SYSDATE) subquery WHERE rn = 1";
+            tbl =  _DbBusiness.GetOrclData(query);
+            return tbl;
+        }
+        
+        private DataTable listMachineGroup()
+        {
+            string query22 = "select distinct machinegroup from Z_SPECMTRLREVISION where MACHINEGROUP NOT IN ('CR','KZ') order by machinegroup asc";
+            DataTable tbl = _DbBusiness.GetOrclData(query22);
+            return tbl;
+        }
+
+        private string TemplatePathReturn(string machineGroup)
+        {
+            string path = "";
+            switch (machineGroup)
+            {
+                case "51":
+                case "5A":
+                case "5B":
+                    path = "Ext-51-Top(TT).xlsm";
+                    break;
+                case "53":
+                case "5P":
+                case "5Q":
+                    path = "Ext-53-Side(TS).xlsm";
+                    break;
+                case "62":
+                    path = "Cut-62-SQPreset(PL).xlsm";
+                    break;
+                case "65":
+                    path = "Cut-65-BexterCut(BR).xlsm";
+                    break;
+                case "6D":
+                    path = "Cut-64-BexterIns(SR)04.xlsm";
+                    break;
+                case "6C":
+                    path = "Cut-64-BexterIns(SR)03.xlsm";
+                    break;
+                case "64":
+                    path = "Cut-64-BexterIns(SR)02.xlsm";
+                    break;
+                case "6B":
+                    path = "Cut-64-BexterIns(SR)01.xlsm";
+                    break;
+                case "66":
+                    path = "Cut-66-Lay1st(SP).xlsm";
+                    break;
+                case "68":
+                    path = "Cut-68-Lay2nd(SP).xlsm";
+                    break;
+                case "69":
+                    path = "Cut-69-CCHCut(SL).xlsm";
+                    break;
+                case "63":
+                    path = "Cut-63-CCHSlit(SL).xlsm";
+                    break;
+                case "70":
+                    path = "Cut-70-IL(IL).xlsm";
+                    break;
+                case "71":
+                    path = "Cut-71-PA(PA).xlsm";
+                    break;
+                case "74":
+                    path = "Cut-74-TexCal(TX).xlsm";
+                    break;
+                case "75":
+                    path = "Cut-75-MiniCal(GW).xlsm";
+                    break;
+                case "77":
+                    path = "Cut-77-MiniSlit(GS).xlsm";
+                    break;
+                case "81":
+                    path = "BP-81-BD(BD).xlsm";
+                    break;
+                case "85":
+                    path = "BP-85-BFPreset(BP).xlsm";
+                    break;
+            }
+            return path;
+        }
+        private DataTable GetAlreadyConvertSize(string Machinegroup)
+        {
+            string query = "SELECT * FROM MTRL_ProcessConvertLog WHERE MachineGroup = '"+Machinegroup+"'";
+            DataTable tbl = _DbBusiness.GetSQLData(query);
+            return tbl;
+        }
+        
+        private void getDataField()
+         {
+            isRunning = true;
+            int startFileRow = 9;
+            /// Get the lastest version of all size
+            /// 
+            string listFieldID = "";
+            DataTable dataList = new DataTable();
+            dataList.Columns.Add("PARTNUMBER");
+            dataList.Columns.Add("REVISIONNO");
+            dataList.Columns.Add("APPLICATIONDATE");
+            dataList.Columns.Add("MACHINEGROUP");
+            DataTable dataConvertHistory = new DataTable();
+            DataTable LastestTbl = new DataTable();
+            foreach (string machinegr in machineGroup)
+            {
+                dataConvertHistory = GetAlreadyConvertSize(machinegr);
+                LastestTbl = getLastestVersionInf(machinegr);
+                if (dataConvertHistory.Rows.Count > 0)
+                {
+                    //DataTable dataConvertHistoryCoppy = dataConvertHistory.Copy();
+                    //dataConvertHistoryCoppy.PrimaryKey = dataConvertHistory.Columns[1];
+                    ////    new DataColumn[] 
+                    ////{
+                    ////    dataConvertHistoryCoppy.Columns["PARTNUMBER"],
+                    ////    dataConvertHistoryCoppy.Columns["REVISIONNO"],
+                    ////    dataConvertHistoryCoppy.Columns["MACHINEGROUP"]
+                    ////};
+                    foreach (DataRow row in LastestTbl.Rows)
+                    {                        
+                        if(!ExistsInConvertHistory(row,dataConvertHistory))
+                        {
+                            DataRow NewRow = dataList.NewRow();
+                            NewRow["PARTNUMBER"] = row["PARTNUMBER"].ToString().Trim();
+                            NewRow["REVISIONNO"] = row["REVISIONNO"].ToString().Trim();
+                            NewRow["APPLICATIONDATE"] = row["APPLICATIONDATE"].ToString().Trim();
+                            NewRow["MACHINEGROUP"] = row["MACHINEGROUP"].ToString().Trim();
+                            dataList.Rows.Add(NewRow);
+                        }                        
+                    }
+                }
+                else
+                {
+                    dataList = LastestTbl;
+                }
+
+                /// Get the list of FieldID for each machinegroup
+                listFieldID = GetTemplateFieldID(TemplatePathReturn(machinegr));
+
+                StringBuilder stringBuilder = new StringBuilder();
+                string newlistFieldID = listFieldID.Replace("(", "").Replace(")", "").Replace("'", "");
+
+                List<string> ListField = new List<string>(newlistFieldID.Split(','));                
+                ///
+
+                foreach (DataRow row in dataList.Rows)
+                {
+                    _Application excelApp = new _Excel.Application();
+                    try
+                    {
+                        string query = @"SELECT TRIM(A.PARTNUMBER) AS MATERIALSIZE,A.PARTID,TRIM(A.MACHINEGROUP) AS MACHINETYPE, TRIM(A.REVISIONNO) AS REVISIONNO, 
+                        TRIM(A.PrevRevisionNo) as PrevRevisionNo, A.TRIALFLAG, TRIM(RV.APPLICATIONDATE) AS APPLICATIONDATE 
+                        FROM(
+                        SELECT PARTNUMBER, MACHINEGROUP, PARTID, REVISIONNO, PrevRevisionNo, TRIALFLAG
+                        FROM (
+                            SELECT PARTNUMBER, MACHINEGROUP, PARTID, REVISIONNO, LAG(REVISIONNO, 1, 0) OVER (PARTITION BY PARTNUMBER ORDER BY REVISIONNO) AS PrevRevisionNo, TRIALFLAG
+                            FROM Z_SPECMTRLPROCESSSTATUS B
+                            WHERE B.APPROVESTATE = '9' AND B.MACHINEGROUP = '" + machinegr + "'" + " AND B.PARTNUMBER = '" + row["PARTNUMBER"].ToString().Trim() + "'" +
+                                    " ORDER BY REVISIONNO DESC ) sub" +
+                                    " WHERE ROWNUM = 1) A" +
+                                    " LEFT JOIN Z_SPECMTRLREVISION RV ON A.PARTNUMBER = RV.PARTNUMBER AND A.MACHINEGROUP = RV.MACHINEGROUP AND A.REVISIONNO = RV.REVISIONNO";
+
+                        DataTable tbl = new DataTable();
+                        tbl = _DbBusiness.GetOrclData(query);
+
+                        
+                        Workbook wb = excelApp.Workbooks.Open(Path.Combine(TemplateCoppy, TemplatePathReturn(machinegr)));
+                        Worksheet wsValues = wb.Worksheets["DataSheetValue"];
+                        Worksheet wsHeaders = wb.Worksheets["DataSheetHeader"];
+                        Worksheet wsMain = wb.Worksheets[1];
+
+                        string GetCurrentVerFieldDataQuery = @"SELECT TRIM(SPECM.FIELDID) AS FIELDID,TRIM(SPECM.FIELDDATA) AS FIELDDATA,FMAS.DATAKIND AS DATAKIND FROM Z_SPECMTRLMASTER specm
+                                LEFT JOIN Z_SPECMTRLFIELDIDMASTER fmas  ON SPECM.FIELDID = FMAS.FIELDID AND FMAS.MACHINEGROUP = SPECM.MACHINEGROUP 
+                                WHERE SPECM.REVISIONNO ='" + tbl.Rows[0]["REVISIONNO"].ToString() + "' AND SPECM.PARTNUMBER ='" + tbl.Rows[0]["MATERIALSIZE"].ToString().Trim() + "' AND SPECM.MACHINEGROUP='" + tbl.Rows[0]["MACHINETYPE"].ToString()
+                                           + "' AND SPECM.FIELDID IN " + listFieldID
+                                       + " order by SPECM.FIELDID asc";
+                        DataTable currentVersion = _DbBusiness.GetOrclData(GetCurrentVerFieldDataQuery);
+
+                        string GetPreviousVerFieldDataQuery = @"SELECT TRIM(SPECM.FIELDID) AS FIELDID,TRIM(SPECM.FIELDDATA) AS FIELDDATA,FMAS.DATAKIND AS DATAKIND FROM Z_SPECMTRLMASTER specm
+                                LEFT JOIN Z_SPECMTRLFIELDIDMASTER fmas  ON SPECM.FIELDID = FMAS.FIELDID AND FMAS.MACHINEGROUP = SPECM.MACHINEGROUP 
+                                WHERE SPECM.REVISIONNO ='" + tbl.Rows[0]["PrevRevisionNo"].ToString() + "' AND SPECM.PARTNUMBER ='" + tbl.Rows[0]["MATERIALSIZE"].ToString().Trim() + "' AND SPECM.MACHINEGROUP='" + tbl.Rows[0]["MACHINETYPE"].ToString()
+                                    + "' AND SPECM.FIELDID IN " + listFieldID
+                                    + " order by SPECM.FIELDID asc";
+                        DataTable previousVersion = _DbBusiness.GetOrclData(GetPreviousVerFieldDataQuery);
+                        ///Fill Data
+                        wsHeaders.Cells[1, 2].Value = "";
+                        wsHeaders.Cells[2, 2].Value = "";
+                        wsHeaders.Cells[3, 2].Value = tbl.Rows[0]["MATERIALSIZE"].ToString().Trim();
+
+                        wsValues.Cells[4, 2].Value = tbl.Rows[0]["REVISIONNO"].ToString().Trim();
+                        wsValues.Cells[5, 2].Value = tbl.Rows[0]["PrevRevisionNo"].ToString().Trim();
+
+                        if (currentVersion.Rows.Count > 0)
+                        {
+                            for (int i = 0; i < ListField.Count; i++)
+                            {
+                                string fieldName = ListField[i];
+                                int dataCurrentIndex = currentVersion.AsEnumerable()
+                                .Select((Tblrow, TblrowIndex) => new { Row = Tblrow, Index = TblrowIndex })
+                                .FirstOrDefault(item => item.Row.Field<string>("FIELDID") == fieldName)?
+                                .Index ?? -1;
+                                int dataPreviousIndex = previousVersion.AsEnumerable()
+                                .Select((Tblrow, TblrowIndex) => new { Row = Tblrow, Index = TblrowIndex })
+                                .FirstOrDefault(item => item.Row.Field<string>("FIELDID") == fieldName)?
+                                .Index ?? -1;
+
+                                if (dataCurrentIndex >= 0)
+                                {
+                                    if (currentVersion.Rows[dataCurrentIndex]["DATAKIND"].ToString() == "1" && currentVersion.Rows[dataCurrentIndex]["FIELDDATA"].ToString() != "")
+                                    {
+                                        wsValues.Cells[startFileRow + i, 2].Value = currentVersion.Rows[dataCurrentIndex]["FIELDDATA"].ToString();
+                                    }
+                                    else if (currentVersion.Rows[dataCurrentIndex]["DATAKIND"].ToString() == "1" && currentVersion.Rows[dataCurrentIndex]["FIELDDATA"].ToString() == "")
+                                    {
+                                        wsValues.Cells[startFileRow + i, 2].Value = "";
+                                    }
+                                    else if (currentVersion.Rows[dataCurrentIndex]["DATAKIND"].ToString() == "0" && currentVersion.Rows[dataCurrentIndex]["FIELDDATA"].ToString() != "")
+                                    {
+                                        double data = double.Parse(currentVersion.Rows[dataCurrentIndex]["FIELDDATA"].ToString());
+                                        wsValues.Cells[startFileRow + i, 2].Value = data;
+                                    }
+                                    else
+                                    {
+                                        wsValues.Cells[startFileRow + i, 2].Value = "";
+                                    }
+                                }
+                                if (dataPreviousIndex >= 0)
+                                {
+                                    if (previousVersion.Rows[dataPreviousIndex]["DATAKIND"].ToString() == "1" && previousVersion.Rows[dataPreviousIndex]["FIELDDATA"].ToString() != "")
+                                    {
+                                        wsValues.Cells[startFileRow + i, 3].Value = previousVersion.Rows[dataPreviousIndex]["FIELDDATA"].ToString();
+                                    }
+                                    else if (previousVersion.Rows[dataPreviousIndex]["DATAKIND"].ToString() == "1" && previousVersion.Rows[dataPreviousIndex]["FIELDDATA"].ToString() == "")
+                                    {
+                                        wsValues.Cells[startFileRow + i, 2].Value = "";
+                                    }
+                                    else if (previousVersion.Rows[dataPreviousIndex]["DATAKIND"].ToString() == "0" && previousVersion.Rows[dataPreviousIndex]["FIELDDATA"].ToString() != "")
+                                    {
+                                        double data = double.Parse(previousVersion.Rows[dataPreviousIndex]["FIELDDATA"].ToString());
+                                        wsValues.Cells[startFileRow + i, 3].Value = data;
+                                    }
+                                    else
+                                    {
+                                        wsValues.Cells[startFileRow + i, 3].Value = "";
+                                    }
+                                }
+                            }
+                            wsValues.Cells[6, 2].Value = tbl.Rows[0]["APPLICATIONDATE"].ToString().Trim();
+                            // Edit Application date , issue date of both size
+                        }
+
+
+                        string fileName = tbl.Rows[0]["MATERIALSIZE"].ToString() + "_" + row["REVISIONNO"].ToString();
+                        Range range = wsMain.Range["AL75"];
+
+                        range.Font.Name = "Calibri";
+
+                        wb.ForceFullCalculation = true;
+                        string outputPath = StoragePdf + GetLocationDestinationFolder(machinegr);
+                        string despath = Path.Combine(outputPath, fileName + ".pdf");
+
+                        wsMain.ExportAsFixedFormat(XlFixedFormatType.xlTypePDF, despath);
+                        bool res = CreateConvertPdfHistory(tbl.Rows[0]["MATERIALSIZE"].ToString(), row["REVISIONNO"].ToString(), machinegr);
+                        
+                        wb.Close(false);
+                        System.Runtime.InteropServices.Marshal.FinalReleaseComObject(wb);
+
+                        //excelApp.Quit();
+                        
+                        ReleaseObject(GetProcessID(excelApp));
+                        System.Runtime.InteropServices.Marshal.FinalReleaseComObject(excelApp);
+
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message);
+                    }
+
+                }
+                
+            }
+            isRunning = false;
+        }
+        private static int GetProcessID(_Application app)
+        {
+            int processID = 0;
+            
+            try
+            {
+                int hwnd = app.Hwnd;
+                int threadId = NativeMethods.GetWindowThreadProcessId(hwnd, out processID);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error: " + ex.Message);
+            }
+
+            return processID;
+        }
+        internal static class NativeMethods
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            internal static extern int GetWindowThreadProcessId(int hwnd, out int processId);
+        }
+        //private static int GetProcessID(Workbook app)
+        //{
+        //    int pID = 0;
+        //    try
+        //    {
+        //        pID = app.
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Console.WriteLine("Error: " + ex.Message);
+        //    }
+
+        //    return pID;
+        //}
+        private static void ReleaseObject(int pid)
+        {
+            try
+            {
+                Process excelProcess = Process.GetProcessById(pid);
+                excelProcess.Kill();
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine("Error: " + ex.Message);
+            }
+            finally
+            {
+                GC.Collect();
+            }
+        }
+        private bool ExistsInConvertHistory(DataRow row, DataTable dataConvertHistory)
+        {
+            // Assume the primary key is PARTNUMBER + REVISIONNO
+            string pk = row["PARTNUMBER"].ToString().Trim() + "|" + row["REVISIONNO"].ToString();
+
+            foreach (DataRow historyRow in dataConvertHistory.Rows)
+            {
+                string historyPk = historyRow["PARTNAME"].ToString().Trim() + "|" + historyRow["REVISION"].ToString();
+                if (pk == historyPk)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        private bool CreateConvertPdfHistory(string MaterialSize, string Revision, string MachineGroup)
+        {
+            bool result = false;
+
+            string query = "INSERT INTO MTRL_ProcessConvertLog(PartName,Revision,Register_Date,Register_By,Status,MachineGroup) " +
+                " VALUES ('" + MaterialSize + "','" + Revision + "','" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "','GetProcessData&Template','Successed','" + MachineGroup + "')";
+            try
+            {
+                result = _DbBusiness.ExcuteSQLQuery(query);
+            }
+            catch(Exception ex)
+            {
+                throw ex;
+            }
+
+            return result;
+        }
+        private string GetTemplateFieldID(string path) ///Lỗi: Nếu giữa 1 chu kì get data mà ở thư mục Spec gốc thay đổi template thì các thông số value sẽ sai so với thực tế
+        {
+            string FullFilePath = Path.Combine(TemplateLink, path);
+            string DestinationPath = Path.Combine(TemplateCoppy, path);
+
+
+            StringBuilder stringBuilder = new StringBuilder();
+            try
+            {
+                if (!Directory.Exists(TemplateLink))
+                {
+                    MessageBox.Show("Không thể truy cập vào sharing folder.");// use Log4net
+                }
+
+                if (!File.Exists(FullFilePath))
+                {
+                    MessageBox.Show("File không tồn tại trong sharing folder.");// use Log4net
+                }
+
+                if (!Directory.Exists(TemplateCoppy))
+                {
+                    Directory.CreateDirectory(TemplateCoppy);// use Log4net
+                }
+                if (!File.Exists(Path.Combine(DestinationPath)))
+                {
+                    try
+                    {
+                        using (FileStream sourceFile = new FileStream(FullFilePath, FileMode.Open, FileAccess.Read))
+                        using (FileStream destinationFile = new FileStream(DestinationPath, FileMode.Create, FileAccess.Write))
+                        {
+                            sourceFile.CopyTo(destinationFile);
+                        }
+
+                        DateTime lastModified = File.GetLastWriteTime(FullFilePath);
+                        //MessageBox.Show($"File đã được sao chép thành công.\nNgày sửa đổi cuối cùng: {lastModified}");// use Log4net
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message);
+                    }
+                }                               
+            }
+            catch(Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+
+            #region LoadFieldID
+            _Application app = new _Excel.Application();
+            Workbook wbDestination = app.Workbooks.Open(DestinationPath);
+
+            Worksheet wsValue = wbDestination.Worksheets["DataSheetValue"];
+
+            int numData = int.Parse(wsValue.Cells[1,2].Value.ToString());
+            int startFileRow = 9;
+
+            stringBuilder.Append("(");
+
+            for (int i = 0; i < numData; i++)
+            {
+                stringBuilder.Append("'" + wsValue.Cells[ startFileRow + i, 1].Value.ToString() + "'");
+                stringBuilder.Append(",");
+            }
+            stringBuilder.Remove(stringBuilder.Length - 1, 1);
+            stringBuilder.Append(")");
+            #endregion
+            wbDestination.Close(false);
+            
+            System.Runtime.InteropServices.Marshal.FinalReleaseComObject(wbDestination);
+            //app.Quit();
+            ReleaseObject(GetProcessID(app));
+            System.Runtime.InteropServices.Marshal.FinalReleaseComObject(app);
+            return stringBuilder.ToString();
+        }
+        private string GetLocationDestinationFolder(string machineGroup)
+        {
+            string path = "";
+
+            switch (machineGroup)
+            {
+                case "51":
+                    path = @"\TOP_1\";
+                    break;
+                case "5A":
+                    path = @"\TOP_2\";
+                    break;
+                case "5B":
+                    path = @"\TOP_3\";
+                    break;
+                case "53":
+                    path = @"\SIDE_1\";
+                    break;
+                case "5P":
+                    path = @"\SIDE_2\";
+                    break;
+                case "5Q":
+                    path = @"\SIDE_3\";
+                    break;
+                case "62":
+                    path = @"\SQPRESET\";
+                    break;
+                case "65":
+                    path = @"\BEXTERCUTTER\";
+                    break;
+                case "6D":
+                    path = @"\BEXTERINS_4\";
+                    break;
+                case "6C":
+                    path = @"\BEXTERINS_3\";
+                    break;
+                case "64":
+                    path = @"\BEXTERINS_2\";
+                    break;
+                case "6B":
+                    path = @"\BEXTERINS_1\";
+                    break;
+                case "66":
+                    path = @"\1STLAYER\";
+                    break;
+                case "68":
+                    path = @"\2NDLAYER\";
+                    break;
+                case "69":
+                    path = @"\CCHCUTTER\";
+                    break;
+                case "63":
+                    path = @"\CCHSLITTER\";
+                    break;
+                case "70":
+                    path = @"\2RH\";
+                    break;
+                case "71":
+                    path = @"\3PA\";
+                    break;
+                case "74":
+                    path = @"\TEXCAL\";
+                    break;
+                case "75":
+                    path = @"\SMALLCAL\";
+                    break;
+                case "77":
+                    path = @"\SMALLSLITTER\";
+                    break;
+                case "81":
+                    path = @"\BEAD\";
+                    break;
+                case "85":
+                    path = @"\BEADPRESET\";
+                    break;
+            }
+            return path;
+        }
+        private DataTable HistoryRefresh()
+        {
+            string query = @"SELECT PartName AS SIZE, Revision AS PHIENBAN, Register_Date AS NGAYCAPNHAT FROM MTRL_ProcessConvertLog ORDER BY Register_Date DESC";
+            DataTable tbl = _DbBusiness.GetSQLData(query);
+            return tbl;
+        }
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            if (this._countSecond > 0)
+                this._countSecond -= 1;
+            else
+            {
+                if (this._countMinute > 0)
+                {
+                    this._countSecond = 59;
+                    this._countMinute -= 1;
+                }
+                else
+                {
+                    if(isRunning)
+                        getDataField();
+                }
+            }
+        }
+
+        private async void timer2_Tick(object sender, EventArgs e)
+        {
+            if (this._countSecond2 > 0)
+                this._countSecond2 -= 1;
+            else
+            {
+                if (this._countMinute2 > 0)
+                {
+                    this._countSecond2 = 59;
+                    this._countMinute2 -= 1;
+                }
+                else
+                {
+                    DataTable tbl = HistoryRefresh();
+                    gridControl1.DataSource = tbl;
+                }
+            }
+        }
+    }
+}
